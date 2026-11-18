@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- Added Suomisport event registrations API for scoring programs
+  (`api/suomisport/events/<uuid>/registrations/`, token access for the `suomisport_registrations` group)
+
+### Updating notes
+- Create group `suomisport_registrations` and a user with an API token for each scoring program
+- Check `SUOMISPORT["EVENT_REGISTRATIONS_PATH"]` against the Suomisport API documentation
+
 ## 1.7.1 - 2026-06-06
 - Fixed uv.lock version
 

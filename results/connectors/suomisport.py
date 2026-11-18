@@ -21,6 +21,8 @@ class Suomisport:
     API description: https://info.suomisport.fi/wp-content/uploads/2020/01/suomisport-API.html
     """
 
+    timeout = 30
+
     def __init__(self):
         """
         Initialize connection and set setting values.
@@ -32,19 +34,22 @@ class Suomisport:
         self.organization_id = settings.SUOMISPORT.get("ORGANIZATION_ID", None)
         self.licence_types = settings.SUOMISPORT.get("LICENCE_TYPES", None)
         self.fetch_size = settings.SUOMISPORT.get("FETCH_SIZE", 1000)
+        self.timeout = settings.SUOMISPORT.get("TIMEOUT", 30)
         auth = HTTPBasicAuth(client_id, client_secret)
         client = BackendApplicationClient(client_id=client_id)
         self.oauth = OAuth2Session(client=client)
-        self.token = self.oauth.fetch_token(token_url=self.token_url, auth=auth)
+        self.token = self.oauth.fetch_token(token_url=self.token_url, auth=auth, timeout=self.timeout)
 
-    def _fetch_from_api(self, path, ts=None):
+    def _fetch_from_api(self, path, ts=None, raise_errors=False):
         """
         Fetch information from API. Creates multiple requests if all results do not fit in FETCH_SIZE parameter.
 
         :param path: path to resource, i.e. 'licence/'
         :param ts: fetch only results updates since ts
+        :param raise_errors: raise requests.HTTPError on an error response instead of returning partial content
         :type path: str
         :type ts: datetime
+        :type raise_errors: bool
         :return: content list
         :rtype: list
         """
@@ -54,7 +59,10 @@ class Suomisport:
             url = self.base_url + path + "?page=" + str(page) + "&size=" + str(self.fetch_size)
             if ts:
                 url += "&ts=" + ts.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-            result = self.oauth.get(url).json()
+            response = self.oauth.get(url, timeout=self.timeout)
+            if raise_errors:
+                response.raise_for_status()
+            result = response.json()
             if not result or "content" not in result:
                 break
             content += result["content"]
@@ -144,8 +152,35 @@ class Suomisport:
         :rtype: dict
         """
         url = "user-info/" + str(user_id)
-        user = self.oauth.get(self.base_url + url).json()
+        user = self.oauth.get(self.base_url + url, timeout=self.timeout).json()
         return user
+
+    def get_event(self, event_uuid):
+        """
+        Get event information by event UUID.
+
+        :param event_uuid: Suomisport event UUID
+        :type event_uuid: str
+        :return: event information or None if the event is not found
+        :rtype: dict | None
+        """
+        response = self.oauth.get(self.base_url + "event/uuid/" + str(event_uuid), timeout=self.timeout)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
+
+    def get_event_registrations(self, event_id):
+        """
+        Get users registered to the event.
+
+        :param event_id: Suomisport event id (numeric id, not UUID)
+        :type event_id: int
+        :return: registrations
+        :rtype: list
+        """
+        path = settings.SUOMISPORT.get("EVENT_REGISTRATIONS_PATH", "event/{event_id}/registered-users")
+        return self._fetch_from_api(path.format(event_id=event_id), raise_errors=True)
 
     def get_licences(self, licence_period_id, licence_type_id, ts=None):
         """
@@ -183,6 +218,21 @@ class Suomisport:
         else:
             return "U"
 
+    @classmethod
+    def _display_first_name(cls, user):
+        """
+        First name to show: nickname if set, otherwise the first of the official first names.
+
+        :param user: Suomisport user (or granted merit) dict
+        :type user: dict
+        :return: capitalized first name
+        :rtype: str
+        """
+        first_name = cls._capitalize_name(user["nickname"]) if user.get("nickname") else None
+        if not first_name:
+            first_name = cls._capitalize_name((user.get("firstName") or "").split(" ")[0])
+        return first_name
+
     @staticmethod
     def _capitalize_name(name):
         parts = name.split("-")
@@ -218,9 +268,7 @@ class Suomisport:
             modification_time = isoparse(licence["modificationTime"])
             user = licence["user"]
             sport_id = str(user["sportId"])
-            first_name = self._capitalize_name(user["nickname"]) if "nickname" in user else None
-            if not first_name:
-                first_name = self._capitalize_name(user["firstName"].split(" ")[0])
+            first_name = self._display_first_name(user)
             last_name = self._capitalize_name(user["lastName"])
             gender = self._parse_gender(user["gender"])
             date_of_birth = datetime.datetime.strptime(user["birthDate"], "%Y-%m-%d").date()
@@ -351,9 +399,7 @@ class Suomisport:
         try:
             athlete = Athlete.objects.get(sport_id=sport_id)
         except Athlete.DoesNotExist:
-            first_name = self._capitalize_name(granted_merit["nickname"]) if "nickname" in granted_merit else None
-            if not first_name:
-                first_name = self._capitalize_name(granted_merit["firstName"].split(" ")[0])
+            first_name = self._display_first_name(granted_merit)
             last_name = self._capitalize_name(granted_merit["lastName"].split(" ")[0])
             athlete = Athlete.objects.create(sport_id=sport_id, first_name=first_name, last_name=last_name, gender="U")
             logger.info("Created new athlete from Suomisport: %s", sport_id)
