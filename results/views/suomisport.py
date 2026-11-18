@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 import requests
 from django.conf import settings
@@ -32,7 +33,7 @@ class SuomisportRegistrationPermission(BasePermission):
             return False
         if user.is_superuser:
             return True
-        group = settings.SUOMISPORT.get("REGISTRATIONS_GROUP", "suomisport_registrations")
+        group = _settings().get("REGISTRATIONS_GROUP", "suomisport_registrations")
         return user.groups.filter(name=group).exists()
 
 
@@ -40,15 +41,11 @@ class SuomisportRegistrationThrottle(UserRateThrottle):
     scope = "suomisport_registrations"
 
     def get_rate(self):
-        return settings.SUOMISPORT.get("REGISTRATIONS_THROTTLE_RATE", "30/min")
+        return _settings().get("REGISTRATIONS_THROTTLE_RATE", "30/min")
 
 
-def _first_name(user):
-    nickname = (user.get("nickname") or "").strip()
-    if nickname:
-        return Suomisport._capitalize_name(nickname)
-    first_name = (user.get("firstName") or "").strip()
-    return Suomisport._capitalize_name(first_name.split(" ")[0]) if first_name else ""
+def _settings():
+    return getattr(settings, "SUOMISPORT", None) or {}
 
 
 def _birth_year(user):
@@ -84,8 +81,8 @@ def _registration(registration, athletes):
         "active_discount_type": registration.get("activeDiscountType"),
         "registration_info": registration.get("registrationInfo") or "",
         "sport_id": sport_id,
-        "first_name": _first_name(user),
-        "last_name": Suomisport._capitalize_name(user.get("lastName") or "") if user.get("lastName") else "",
+        "first_name": Suomisport._display_first_name(user),
+        "last_name": Suomisport._capitalize_name(user.get("lastName") or ""),
         "gender": Suomisport._parse_gender(user.get("gender")),
         "birth_year": _birth_year(user),
         "sport_parameters": [
@@ -110,7 +107,7 @@ def fetch_event_registrations(event_uuid):
     """
     connector = get_connector()
     event = connector.get_event(event_uuid)
-    if not event:
+    if not event or not event.get("id"):
         return None
     registrations = connector.get_event_registrations(event.get("id"))
     sport_ids = {str((r.get("user") or {}).get("sportId") or "") for r in registrations} - {""}
@@ -156,6 +153,14 @@ def suomisport_event_registrations(request, event_uuid):
     Fetched from Suomisport with Kiti's API connection and cached for SUOMISPORT["REGISTRATIONS_CACHE_SECONDS"]
     (default 120). Club information comes from Kiti's athlete register.
     """
+    try:
+        event_uuid = str(uuid.UUID(event_uuid))
+    except ValueError:
+        return Response({"detail": "Event not found."}, status=status.HTTP_404_NOT_FOUND)
+    if not _settings().get("BASE_URL"):
+        return Response(
+            {"detail": "Suomisport connection is not configured."}, status=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
     cache_key = "suomisport_registrations_%s" % event_uuid
     data = cache.get(cache_key)
     if data is None:
@@ -175,7 +180,7 @@ def suomisport_event_registrations(request, event_uuid):
             return Response({"detail": "Suomisport is not available."}, status=status.HTTP_502_BAD_GATEWAY)
         if data is None:
             return Response({"detail": "Event not found."}, status=status.HTTP_404_NOT_FOUND)
-        cache.set(cache_key, data, settings.SUOMISPORT.get("REGISTRATIONS_CACHE_SECONDS", 120))
+        cache.set(cache_key, data, _settings().get("REGISTRATIONS_CACHE_SECONDS", 120))
     logger.info(
         "Suomisport registrations for event %s served to %s (%d rows)",
         event_uuid,

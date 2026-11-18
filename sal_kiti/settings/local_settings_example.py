@@ -107,6 +107,7 @@ SUOMISPORT = {
     "TOKEN_URL": "https://www.suomisport.fi/oauth2/token",
     "LICENCE_TYPES": ["Competition"],
     "FETCH_SIZE": 1000,
+    "TIMEOUT": 30,
     # Event registrations for scoring programs (api/suomisport/events/<uuid>/registrations/)
     "EVENT_REGISTRATIONS_PATH": "event/{event_id}/registered-users",
     "REGISTRATIONS_GROUP": "suomisport_registrations",

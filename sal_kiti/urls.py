@@ -19,7 +19,7 @@ urlpatterns = [
     path("api/sal/pohjolanmalja/<int:year>/", statistics_pohjolan_malja, name="sal-pohjolan-malja"),
     path("api/users/current/", current_user, name="current-user"),
     path(
-        "api/suomisport/events/<uuid:event_uuid>/registrations/",
+        "api/suomisport/events/<str:event_uuid>/registrations/",
         suomisport_event_registrations,
         name="suomisport-event-registrations",
     ),

@@ -168,6 +168,34 @@ class SuomisportRegistrationsTestCase(TestCase):
         self.assertIsNone(cache.get("suomisport_registrations_%s" % EVENT_UUID))
 
     @patch("results.views.suomisport.get_connector")
+    def test_uppercase_uuid(self, mock_connector):
+        mock_connector.return_value = connector_mock()
+        url = reverse("suomisport-event-registrations", kwargs={"event_uuid": EVENT_UUID.upper()})
+        response = self.client.get(url, HTTP_AUTHORIZATION="Token " + self.token.key)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        mock_connector.return_value.get_event.assert_called_once_with(EVENT_UUID)
+
+    @patch("results.views.suomisport.get_connector")
+    def test_invalid_uuid(self, mock_connector):
+        url = reverse("suomisport-event-registrations", kwargs={"event_uuid": "not-a-uuid"})
+        response = self.client.get(url, HTTP_AUTHORIZATION="Token " + self.token.key)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        mock_connector.assert_not_called()
+
+    @patch("results.views.suomisport.get_connector")
+    def test_event_without_id(self, mock_connector):
+        mock_connector.return_value = connector_mock(event={"uuid": EVENT_UUID})
+        self.assertEqual(self._get(self.token).status_code, status.HTTP_404_NOT_FOUND)
+        mock_connector.return_value.get_event_registrations.assert_not_called()
+
+    @patch("results.views.suomisport.get_connector")
+    def test_not_configured(self, mock_connector):
+        with self.settings(SUOMISPORT={}):
+            response = self._get(self.token)
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        mock_connector.assert_not_called()
+
+    @patch("results.views.suomisport.get_connector")
     def test_superuser_is_allowed(self, mock_connector):
         mock_connector.return_value = connector_mock()
         admin = User.objects.create(username="admin", is_superuser=True)

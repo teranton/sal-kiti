@@ -12,7 +12,7 @@ from results.tests.factories.organizations import OrganizationFactory
 
 
 class OAuth(object):
-    def __init__(self, url):
+    def __init__(self, url, timeout=None):
         self.url = url
 
     def json(self):
@@ -202,7 +202,7 @@ class SuomisportCase(TestCase):
 
 
 class EventResponse(object):
-    def __init__(self, url):
+    def __init__(self, url, timeout=None):
         self.url = url
         self.status_code = 404 if "missing" in url else 200
 
