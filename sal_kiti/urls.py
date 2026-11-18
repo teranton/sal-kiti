@@ -8,6 +8,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from results.routers import router
 from results.views.auth import LocalLoginView, LocalLogoutView
 from results.views.statistics import statistics_pohjolan_malja
+from results.views.suomisport import suomisport_event_registrations
 from results.views.users import current_user
 
 admin.site.site_title = _("Kiti admin")
@@ -17,6 +18,11 @@ admin.site.index_title = _("Kiti administration")
 urlpatterns = [
     path("api/sal/pohjolanmalja/<int:year>/", statistics_pohjolan_malja, name="sal-pohjolan-malja"),
     path("api/users/current/", current_user, name="current-user"),
+    path(
+        "api/suomisport/events/<uuid:event_uuid>/registrations/",
+        suomisport_event_registrations,
+        name="suomisport-event-registrations",
+    ),
     path("api/", include(router.urls)),
     path("admin/", admin.site.urls),
     path("auth/login/", LocalLoginView.as_view(), name="login"),

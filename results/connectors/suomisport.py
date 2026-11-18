@@ -37,14 +37,16 @@ class Suomisport:
         self.oauth = OAuth2Session(client=client)
         self.token = self.oauth.fetch_token(token_url=self.token_url, auth=auth)
 
-    def _fetch_from_api(self, path, ts=None):
+    def _fetch_from_api(self, path, ts=None, raise_errors=False):
         """
         Fetch information from API. Creates multiple requests if all results do not fit in FETCH_SIZE parameter.
 
         :param path: path to resource, i.e. 'licence/'
         :param ts: fetch only results updates since ts
+        :param raise_errors: raise requests.HTTPError on an error response instead of returning partial content
         :type path: str
         :type ts: datetime
+        :type raise_errors: bool
         :return: content list
         :rtype: list
         """
@@ -54,7 +56,10 @@ class Suomisport:
             url = self.base_url + path + "?page=" + str(page) + "&size=" + str(self.fetch_size)
             if ts:
                 url += "&ts=" + ts.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-            result = self.oauth.get(url).json()
+            response = self.oauth.get(url)
+            if raise_errors:
+                response.raise_for_status()
+            result = response.json()
             if not result or "content" not in result:
                 break
             content += result["content"]
@@ -146,6 +151,33 @@ class Suomisport:
         url = "user-info/" + str(user_id)
         user = self.oauth.get(self.base_url + url).json()
         return user
+
+    def get_event(self, event_uuid):
+        """
+        Get event information by event UUID.
+
+        :param event_uuid: Suomisport event UUID
+        :type event_uuid: str
+        :return: event information or None if the event is not found
+        :rtype: dict | None
+        """
+        response = self.oauth.get(self.base_url + "event/uuid/" + str(event_uuid))
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.json()
+
+    def get_event_registrations(self, event_id):
+        """
+        Get users registered to the event.
+
+        :param event_id: Suomisport event id (numeric id, not UUID)
+        :type event_id: int
+        :return: registrations
+        :rtype: list
+        """
+        path = settings.SUOMISPORT.get("EVENT_REGISTRATIONS_PATH", "event/{event_id}/registered-users")
+        return self._fetch_from_api(path.format(event_id=event_id), raise_errors=True)
 
     def get_licences(self, licence_period_id, licence_type_id, ts=None):
         """

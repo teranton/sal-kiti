@@ -199,3 +199,44 @@ class SuomisportCase(TestCase):
         self.assertEqual(Athlete.objects.get(id=1).gender, "U")
         self.assertEqual(Athlete.objects.get(id=1).info.first().value, "A Judge")
         self.assertEqual(Athlete.objects.get(id=1).info.first().sport, sport)
+
+
+class EventResponse(object):
+    def __init__(self, url):
+        self.url = url
+        self.status_code = 404 if "missing" in url else 200
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise Exception("HTTP %s" % self.status_code)
+
+    def json(self):
+        if self.url.startswith("event/uuid/"):
+            return {"id": 4321, "uuid": "abc", "name": "Event"}
+        if self.url.startswith("event/4321/registered-users"):
+            return {
+                "content": [{"id": 1, "user": {"sportId": 123456789}}],
+                "pageable": {"page": 0, "size": 1000, "total": 1},
+            }
+        return {}
+
+
+class EventSuomiSport(Suomisport):
+    def __init__(self):
+        self.base_url = ""
+        self.organization_id = "1"
+        self.fetch_size = 1000
+        self.oauth = EventResponse
+        self.oauth.get = EventResponse
+
+
+class SuomisportEventCase(TestCase):
+    def test_get_event(self):
+        self.assertEqual(EventSuomiSport().get_event("abc")["id"], 4321)
+
+    def test_get_missing_event(self):
+        self.assertIsNone(EventSuomiSport().get_event("missing"))
+
+    def test_get_event_registrations(self):
+        result = EventSuomiSport().get_event_registrations(4321)
+        self.assertEqual(result[0]["user"]["sportId"], 123456789)
